@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  drawTooltip,
   hexToRgba,
   nearestBit,
   renderGrid,
   snapLength,
   tracePath,
+  useModifierKeys,
   useViewportCanvas,
   type CanvasTheme,
+  type ModifierState,
   type PointerInfo,
+  type TooltipContent,
   type Vec,
 } from '@tomkail/workshop-kit'
 import { useDesignStore } from '../stores/designStore'
@@ -24,7 +28,23 @@ interface Handle {
   id: HandleId
   pos: Vec
   shape: 'dot' | 'ring' | 'diamond'
+  /** Shown beside the handle while dragging */
   label: string
+  /** Shown on hover: value, what dragging does, modifier keys */
+  tooltip: TooltipContent
+}
+
+interface SnapSettings {
+  snap: boolean
+  snapToBits: boolean
+}
+
+/** Modifier hints matching dragUpdate: Shift frees lengths, angles and bit sizes */
+function hints(kind: 'length' | 'pitch' | 'bit', unit: 'mm' | 'in', s: SnapSettings): string[] {
+  const step = unit === 'mm' ? '0.5 mm' : '1/32″'
+  if (kind === 'bit' && s.snapToBits) return ['⇧ any size (snaps to standard bits)']
+  if (!s.snap) return ['Snapping off · S to turn on']
+  return [kind === 'pitch' ? `⇧ drag freely (snaps to ${step} and 15°)` : `⇧ drag freely (snaps to ${step})`]
 }
 
 const polar = (r: number, a: number): Vec => ({ x: r * Math.cos(a), y: r * Math.sin(a) })
@@ -35,23 +55,35 @@ function lobeAngle(design: KnobDesign) {
   return (design.rotation / DEG) - Math.PI / 2
 }
 
-function computeHandles(design: KnobDesign, g: KnobGeometry, unit: 'mm' | 'in'): Handle[] {
+function computeHandles(design: KnobDesign, g: KnobGeometry, unit: 'mm' | 'in', snap: SnapSettings): Handle[] {
   const a0 = g.holeAngles[0]
   const H0 = g.holes[0].center
   const holeEdge = { x: H0.x + g.holeRadius * Math.cos(a0), y: H0.y + g.holeRadius * Math.sin(a0) }
   const la = lobeAngle(design)
   if (design.mode === 'drilled') {
     return [
-      { id: 'blank', pos: polar(g.blankRadius, la), shape: 'diamond', label: `Blank Ø${len(g.blankRadius * 2, unit)}` },
-      { id: 'hole', pos: holeEdge, shape: 'ring', label: `Bit ${bitSize(g.holeRadius * 2, unit)}` },
-      { id: 'pitch', pos: H0, shape: 'dot', label: `Pitch Ø${len(g.pitchRadius * 2, unit)} · ${Math.round(design.rotation)}°` },
+      { id: 'blank', pos: polar(g.blankRadius, la), shape: 'diamond', label: `Blank Ø${len(g.blankRadius * 2, unit)}`, tooltip: { value: `Blank Ø${len(g.blankRadius * 2, unit)}`, action: 'Drag to resize the blank', modifiers: hints('length', unit, snap) } },
+      { id: 'hole', pos: holeEdge, shape: 'ring', label: `Bit ${bitSize(g.holeRadius * 2, unit)}`, tooltip: { value: `Bit ${bitSize(g.holeRadius * 2, unit)}`, action: 'Drag to change the bit size', modifiers: hints('bit', unit, snap) } },
+      {
+        id: 'pitch',
+        pos: H0,
+        shape: 'dot',
+        label: `Pitch Ø${len(g.pitchRadius * 2, unit)} · ${Math.round(design.rotation)}°`,
+        tooltip: { value: `Pitch Ø${len(g.pitchRadius * 2, unit)} · ${Math.round(design.rotation)}°`, action: 'Drag in or out to move the holes, round to rotate', modifiers: hints('pitch', unit, snap) },
+      },
     ]
   }
   const lobeCenter = polar(design.lobePitchDiameter / 2, la)
   return [
-    { id: 'lobe', pos: polar(design.lobePitchDiameter / 2 + design.lobeDiameter / 2, la), shape: 'diamond', label: `Lobe Ø${len(design.lobeDiameter, unit)}` },
-    { id: 'valley', pos: holeEdge, shape: 'ring', label: `Valley bit ${bitSize(g.holeRadius * 2, unit)}` },
-    { id: 'lobePitch', pos: lobeCenter, shape: 'dot', label: `Lobe pitch Ø${len(design.lobePitchDiameter, unit)} · ${Math.round(design.rotation)}°` },
+    { id: 'lobe', pos: polar(design.lobePitchDiameter / 2 + design.lobeDiameter / 2, la), shape: 'diamond', label: `Lobe Ø${len(design.lobeDiameter, unit)}`, tooltip: { value: `Lobe Ø${len(design.lobeDiameter, unit)}`, action: 'Drag to resize the lobes', modifiers: hints('length', unit, snap) } },
+    { id: 'valley', pos: holeEdge, shape: 'ring', label: `Valley bit ${bitSize(g.holeRadius * 2, unit)}`, tooltip: { value: `Valley bit ${bitSize(g.holeRadius * 2, unit)}`, action: 'Drag to change the valley bit', modifiers: hints('bit', unit, snap) } },
+    {
+      id: 'lobePitch',
+      pos: lobeCenter,
+      shape: 'dot',
+      label: `Lobe pitch Ø${len(design.lobePitchDiameter, unit)} · ${Math.round(design.rotation)}°`,
+      tooltip: { value: `Lobe pitch Ø${len(design.lobePitchDiameter, unit)} · ${Math.round(design.rotation)}°`, action: 'Drag in or out to move the lobes, round to rotate', modifiers: hints('pitch', unit, snap) },
+    },
   ]
 }
 
@@ -97,9 +129,12 @@ export function KnobCanvas() {
   const unit = useSettingsStore((s) => s.unit)
   const showConstruction = useSettingsStore((s) => s.showConstruction)
   const showMeasurements = useSettingsStore((s) => s.showMeasurements)
+  const snap = useSettingsStore((s) => s.snap)
+  const snapToBits = useSettingsStore((s) => s.snapToBits)
+  const held = useModifierKeys()
 
   const geometry = useMemo(() => computeKnob(design), [design])
-  const handles = useMemo(() => computeHandles(design, geometry, unit), [design, geometry, unit])
+  const handles = useMemo(() => computeHandles(design, geometry, unit, { snap, snapToBits }), [design, geometry, unit, snap, snapToBits])
   const [hovered, setHovered] = useState<HandleId | null>(null)
   const [dragging, setDragging] = useState<HandleId | null>(null)
   const draggingRef = useRef<HandleId | null>(null)
@@ -171,13 +206,14 @@ export function KnobCanvas() {
         handles,
         active: dragging ?? hovered,
         dragging: dragging !== null,
+        held,
         unit,
         showConstruction,
         showMeasurements,
       })
     })
     return () => cancelAnimationFrame(frame)
-  }, [size, pan, zoom, theme, design, geometry, handles, hovered, dragging, unit, showConstruction, showMeasurements])
+  }, [size, pan, zoom, theme, design, geometry, handles, hovered, dragging, unit, showConstruction, showMeasurements, held])
 
   return (
     <div className={styles.container}>
@@ -201,6 +237,7 @@ interface DrawContext {
   handles: Handle[]
   active: HandleId | null
   dragging: boolean
+  held: ModifierState
   unit: 'mm' | 'in'
   showConstruction: boolean
   showMeasurements: boolean
@@ -333,7 +370,9 @@ function draw(ctx: CanvasRenderingContext2D, d: DrawContext) {
   const active = d.handles.find((h) => h.id === d.active)
   if (active) {
     const s = { x: active.pos.x * zoom + pan.x, y: active.pos.y * zoom + pan.y }
-    pill(ctx, active.label, { x: s.x, y: s.y - 20 }, theme, true)
+    // Dragging shows the live value; hovering shows the full tooltip (value, action, modifier keys)
+    if (d.dragging) pill(ctx, active.label, { x: s.x, y: s.y - 20 }, theme, true)
+    else drawTooltip(ctx, active.tooltip, s, theme, { held: d.held })
   }
 }
 
