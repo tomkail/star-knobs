@@ -1,0 +1,9 @@
+.copiesRow {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.copiesRow > :first-child {
+  flex: 1;
+}

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -32 64 64" width="32" height="32">
+  <style>path{fill:#1a1918;stroke:#fbbf24}circle{fill:none;stroke:#fbbf24}@media (prefers-color-scheme: dark){path{fill:#fbbf24;stroke:#fbbf24}circle{stroke:#1a1918}}</style>
+  <path d="M21.699 -15.704 A4 4 0 0 1 26.642 -13.792 A30 30 0 0 1 29.66 -4.502 A4 4 0 0 1 26.785 -0.05 A10 10 0 0 0 21.64 15.784 A4 4 0 0 1 21.35 21.076 A30 30 0 0 1 13.447 26.818 A4 4 0 0 1 8.324 25.459 A10 10 0 0 0 -8.324 25.459 A4 4 0 0 1 -13.447 26.818 A30 30 0 0 1 -21.35 21.076 A4 4 0 0 1 -21.64 15.784 A10 10 0 0 0 -26.785 -0.05 A4 4 0 0 1 -29.66 -4.502 A30 30 0 0 1 -26.642 -13.792 A4 4 0 0 1 -21.699 -15.704 A10 10 0 0 0 -8.23 -25.489 A4 4 0 0 1 -4.884 -29.6 A30 30 0 0 1 4.884 -29.6 A4 4 0 0 1 8.23 -25.489 A10 10 0 0 0 21.699 -15.704 Z" stroke-width="3" stroke-linejoin="round"/>
+  <circle r="6" stroke-width="3"/>
+</svg>
